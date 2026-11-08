@@ -3,6 +3,7 @@ import { toPricingPromotion, toProductDto, toPromotionDto } from '../common/mapp
 import { isPromotionRunning, quote, type PricingPromotion } from '../common/pricing.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 
+/** Khóa lưu phí vận chuyển trong bảng settings, và giá trị mặc định khi chưa cấu hình. */
 export const SETTING_SHIPPING_FEE = 'base_shipping_fee';
 export const DEFAULT_SHIPPING_FEE = 30_000;
 
@@ -16,12 +17,14 @@ export class PromotionsService {
     return list.map(toPricingPromotion);
   }
 
+  /** Phí vận chuyển cố định (đọc từ bảng settings). */
   async getBaseShippingFee() {
     const s = await this.prisma.setting.findUnique({ where: { key: SETTING_SHIPPING_FEE } });
     const fee = s ? Number(s.value) : DEFAULT_SHIPPING_FEE;
     return Number.isFinite(fee) ? fee : DEFAULT_SHIPPING_FEE;
   }
 
+  /** Toàn bộ khuyến mãi + phí ship để FE tự hiển thị giá giảm. */
   async getPricingContext() {
     const promotions = await this.prisma.promotion.findMany({ include: { products: true }, orderBy: { id: 'asc' } });
     return {

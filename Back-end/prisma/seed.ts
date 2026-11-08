@@ -15,6 +15,7 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('Xóa dữ liệu cũ...');
   await prisma.$transaction([
+    prisma.stockMovement.deleteMany(),
     prisma.orderStatusHistory.deleteMany(),
     prisma.orderItem.deleteMany(),
     prisma.order.deleteMany(),
@@ -54,6 +55,7 @@ async function main() {
         compatibilityNote: p.compatibilityNote ?? null,
         createdAt: new Date(p.createdAt + 'T08:00:00'),
         attributes: { create: Object.entries(p.attributes).map(([key, value]) => ({ key, value: value! })) },
+        stockMovements: { create: { type: 'IMPORT', quantity: p.stock, stockAfter: p.stock, note: 'Tồn kho ban đầu', createdAt: new Date(p.createdAt + 'T08:00:00') } },
       },
     });
   }

@@ -1,6 +1,7 @@
 import type { AttributeKey, Category, CategoryNode, Paginated, Product, ProductQuery } from '../types'
 import { api } from './api'
 
+/** Dựng cây 2 cấp từ danh sách danh mục phẳng (cấp 1 → các danh mục con) */
 export function buildTree(categories: Category[]): CategoryNode[] {
   return categories
     .filter((c) => c.parentId === null)
@@ -19,6 +20,7 @@ export function getCategoryBySlug(slug: string) {
   )
 }
 
+/** Kết quả trang danh sách: sản phẩm + phân trang + giá trị bộ lọc khả dụng (facets) */
 export interface ProductListResult extends Paginated<Product> {
   facets: {
     brands: { value: string; count: number }[]
@@ -65,6 +67,7 @@ export function getProductsByIds(ids: number[]) {
   return api.post<Product[]>('/products/by-ids', { ids })
 }
 
+/** Sản phẩm bán chạy (sắp theo số lượng đã bán), có thể giới hạn trong 1 danh mục */
 export function getBestSellers(limit = 8, categorySlug?: string) {
   return getProducts({ categorySlug, sort: 'popular', pageSize: limit }).then((r) => r.items)
 }

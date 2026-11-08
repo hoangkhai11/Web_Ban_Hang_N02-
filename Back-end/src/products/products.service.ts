@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { toProductDto } from '../common/mappers.js';
-import { getUnitPrice } from '../common/pricing.js';
+import { getUnitPrice, isPromotionRunning } from '../common/pricing.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { PromotionsService } from '../promotions/promotions.service.js';
 import { ATTRIBUTE_KEYS, PRICE_RANGES, type ProductQueryDto } from './dto/product-query.dto.js';
 
+/** Luôn nạp kèm thuộc tính lọc để dùng toProductDto */
 const include = { attributes: true } as const;
 
 // Sắp xếp giá trị thuộc tính tự nhiên: 8 GB < 16 GB < 1 TB
@@ -35,6 +36,7 @@ export class ProductsService {
     return [cat.id, ...cat.children.map((c) => c.id)];
   }
 
+  /** Danh sách sản phẩm cho trang danh mục / tìm kiếm, kèm facet để dựng bộ lọc. */
   async list(query: ProductQueryDto) {
     // 1) Điều kiện nền: còn kinh doanh + danh mục + từ khóa (tìm theo tên, mã, thương hiệu, thông số)
     const base: Prisma.ProductWhereInput[] = [{ isActive: true }];
@@ -70,7 +72,8 @@ export class ProductsService {
 
     const promotions = await this.promotions.getPricingPromotions();
     if (query.promo === '1') {
-      const ids = promotions.filter((p) => p.type === 'PRODUCT_PERCENT' && p.isActive).flatMap((p) => p.productIds);
+      // Chỉ chương trình giảm giá ĐANG CHẠY (đang bật và hôm nay nằm trong khoảng ngày áp dụng)
+      const ids = promotions.filter((p) => p.type === 'PRODUCT_PERCENT' && isPromotionRunning(p)).flatMap((p) => p.productIds);
       where.push({ id: { in: ids } });
     }
 
@@ -127,6 +130,7 @@ export class ProductsService {
     return { product: toProductDto(rest), category: cat, parent };
   }
 
+  /** Sản phẩm cùng danh mục, bán chạy nhất trước. */
   async related(id: number, limit = 4) {
     const p = await this.prisma.product.findUnique({ where: { id } });
     if (!p) throw new NotFoundException('Không tìm thấy sản phẩm');

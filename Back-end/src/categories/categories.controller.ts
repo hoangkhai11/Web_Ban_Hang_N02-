@@ -1,4 +1,5 @@
 import { Controller, Get, Injectable, Module, NotFoundException, Param } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { PrismaService } from '../prisma/prisma.service.js';
 
 const select = { id: true, slug: true, name: true, parentId: true, description: true, icon: true } as const;
@@ -13,6 +14,7 @@ export class CategoriesService {
     return all.filter((c) => c.parentId === null).map((root) => ({ ...root, children: all.filter((c) => c.parentId === root.id) }));
   }
 
+  /** Danh mục theo slug + danh mục cha (nếu là cấp 2) + danh mục con (nếu là cấp 1). */
   async bySlug(slug: string) {
     const category = await this.prisma.category.findUnique({ where: { slug }, select });
     if (!category) throw new NotFoundException('Không tìm thấy danh mục');
@@ -24,6 +26,7 @@ export class CategoriesService {
   }
 }
 
+@ApiTags('Danh mục')
 @Controller('categories')
 export class CategoriesController {
   constructor(private readonly categories: CategoriesService) {}

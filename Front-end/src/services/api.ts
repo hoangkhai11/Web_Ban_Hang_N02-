@@ -5,8 +5,13 @@
  */
 const BASE_URL = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '/api'
 
+/** Đường dẫn ảnh do Back-end phục vụ (/api/uploads/...) đổi theo địa chỉ API; link ngoài giữ nguyên */
+export const assetUrl = (src?: string) => (src?.startsWith('/api/') ? BASE_URL + src.slice(4) : src)
+
+/** Khóa lưu JWT trong localStorage */
 const TOKEN_KEY = 'gicungco_token'
 
+/** Đọc JWT (null nếu chưa đăng nhập hoặc trình duyệt chặn localStorage) */
 export const getToken = () => {
   try {
     return localStorage.getItem(TOKEN_KEY)
@@ -15,6 +20,7 @@ export const getToken = () => {
   }
 }
 
+/** Lưu JWT sau khi đăng nhập; truyền null để xóa (đăng xuất) */
 export const setToken = (token: string | null) => {
   try {
     if (token) localStorage.setItem(TOKEN_KEY, token)
@@ -24,6 +30,7 @@ export const setToken = (token: string | null) => {
   }
 }
 
+/** Lỗi từ API, kèm mã HTTP (0 = không kết nối được Back-end) */
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -34,6 +41,7 @@ export class ApiError extends Error {
 
 type Query = Record<string, string | number | boolean | string[] | undefined | null>
 
+/** Chuyển object thành query string: bỏ giá trị rỗng/false, mảng nối bằng dấu phẩy, true → '1' */
 const toSearch = (query?: Query) => {
   if (!query) return ''
   const params = new URLSearchParams()
@@ -47,18 +55,23 @@ const toSearch = (query?: Query) => {
   return s ? `?${s}` : ''
 }
 
+/**
+ * Gọi API: tự gắn header Authorization nếu có token, gửi body dạng JSON,
+ * lỗi HTTP được chuyển thành ApiError với thông báo tiếng Việt từ Back-end.
+ */
 export async function request<T>(method: string, path: string, options: { body?: unknown; query?: Query } = {}): Promise<T> {
   const headers: Record<string, string> = {}
   const token = getToken()
   if (token) headers.Authorization = `Bearer ${token}`
-  if (options.body !== undefined) headers['Content-Type'] = 'application/json'
+  const isForm = options.body instanceof FormData
+  if (options.body !== undefined && !isForm) headers['Content-Type'] = 'application/json'
 
   let res: Response
   try {
     res = await fetch(BASE_URL + path + toSearch(options.query), {
       method,
       headers,
-      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+      body: isForm ? (options.body as FormData) : options.body !== undefined ? JSON.stringify(options.body) : undefined,
     })
   } catch {
     throw new ApiError(0, 'Không kết nối được máy chủ. Vui lòng kiểm tra Back-end đã chạy chưa.')
@@ -81,6 +94,7 @@ export async function request<T>(method: string, path: string, options: { body?:
   return data as T
 }
 
+/** Hàm tắt theo phương thức HTTP, VD: api.get<Product[]>('/admin/products') */
 export const api = {
   get: <T>(path: string, query?: Query) => request<T>('GET', path, { query }),
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, { body: body ?? {} }),

@@ -1,5 +1,5 @@
-import { Loader2, Pencil, Plus, Search, Trash2 } from 'lucide-react'
-import { useMemo, useState, type FormEvent } from 'react'
+import { Copy, Loader2, Pencil, Plus, Search, Star, Trash2, Upload, X } from 'lucide-react'
+import { useMemo, useRef, useState, type ChangeEvent, type Dispatch, type FormEvent, type SetStateAction } from 'react'
 import { Link } from 'react-router-dom'
 import { Modal } from '../../components/common/Misc'
 import { EmptyState, ErrorState, Spinner } from '../../components/common/States'
@@ -9,7 +9,7 @@ import { useToast } from '../../context/ToastContext'
 import { useAsync } from '../../hooks/useAsync'
 import { ATTRIBUTE_LABELS, CATEGORY_FILTERS } from '../../lib/filters'
 import { formatVND } from '../../lib/format'
-import { createProduct, deleteProduct, listCategories, listProducts, updateProduct, type ProductInput } from '../../services/adminService'
+import { createProduct, deleteProduct, listCategories, listProducts, updateProduct, uploadProductImage, type ProductInput } from '../../services/adminService'
 import type { AttributeKey, Category, Product } from '../../types'
 
 interface FormState {
@@ -20,7 +20,7 @@ interface FormState {
   price: string
   stock: string
   warrantyMonths: string
-  images: string
+  images: string[]
   highlights: string
   description: string
   specs: string
@@ -28,7 +28,7 @@ interface FormState {
   compatibilityNote: string
 }
 
-const empty: FormState = { code: '', name: '', categoryId: '', brand: '', price: '', stock: '0', warrantyMonths: '12', images: '', highlights: '', description: '', specs: '', attributes: {}, compatibilityNote: '' }
+const empty: FormState = { code: '', name: '', categoryId: '', brand: '', price: '', stock: '0', warrantyMonths: '12', images: [], highlights: '', description: '', specs: '', attributes: {}, compatibilityNote: '' }
 
 const toForm = (p: Product): FormState => ({
   code: p.code,
@@ -38,7 +38,7 @@ const toForm = (p: Product): FormState => ({
   price: String(p.price),
   stock: String(p.stock),
   warrantyMonths: String(p.warrantyMonths),
-  images: p.images.join('\n'),
+  images: [...p.images],
   highlights: p.highlights.join('\n'),
   description: p.description,
   specs: Object.entries(p.specs).map(([k, v]) => `${k}: ${v}`).join('\n'),
@@ -48,10 +48,82 @@ const toForm = (p: Product): FormState => ({
 
 const lines = (s: string) => s.split('\n').map((x) => x.trim()).filter(Boolean)
 
-function ProductForm({ initial, categories, onSubmit, onCancel }: { initial: FormState; categories: Category[]; onSubmit: (input: ProductInput) => Promise<void>; onCancel: () => void }) {
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const MAX_IMAGE_MB = 5
+
+/** Chọn ảnh sản phẩm: tải từ thiết bị hoặc dán link; ảnh đầu tiên là ảnh đại diện. */
+export function ImagePicker({ images, onChange, uploading, setUploading }: { images: string[]; onChange: Dispatch<SetStateAction<string[]>>; uploading: boolean; setUploading: (on: boolean) => void }) {
+  const input = useRef<HTMLInputElement>(null)
+  const [link, setLink] = useState('')
+  const [error, setError] = useState('')
+
+  const upload = async (e: ChangeEvent<HTMLInputElement>) => {
+    const files = [...(e.target.files ?? [])]
+    e.target.value = '' // cho phép chọn lại đúng file vừa chọn
+    if (files.some((file) => !IMAGE_TYPES.includes(file.type))) return setError('Chỉ hỗ trợ ảnh JPG, PNG hoặc WebP')
+    if (files.some((file) => file.size > MAX_IMAGE_MB * 1024 * 1024)) return setError(`Mỗi ảnh tối đa ${MAX_IMAGE_MB} MB`)
+    setError('')
+    setUploading(true)
+    try {
+      for (const file of files) {
+        const { url } = await uploadProductImage(file)
+        onChange((cur) => [...cur, url])
+      }
+    } catch (err) {
+      setError((err as Error).message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const addLink = () => {
+    const url = link.trim()
+    if (!/^https?:\/\//i.test(url)) return setError('Link ảnh phải bắt đầu bằng http:// hoặc https://')
+    setError('')
+    onChange((cur) => [...cur, url])
+    setLink('')
+  }
+
+  return (
+    <div>
+      <span className="label">Ảnh sản phẩm (ảnh đầu tiên là ảnh đại diện)</span>
+      {error && <p className="mb-2 rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+      <div className="flex flex-wrap gap-2">
+        {images.map((src, i) => (
+          <div key={src + i} className="group relative">
+            <ProductImage src={src} alt={`Ảnh ${i + 1}`} className={`size-24 rounded-lg border-2 object-cover ${i === 0 ? 'border-brand-600' : 'border-slate-200'}`} />
+            {i === 0 ? (
+              <span className="absolute bottom-1 left-1 rounded bg-brand-700 px-1.5 text-[10px] font-semibold text-white">Đại diện</span>
+            ) : (
+              <button type="button" className="absolute bottom-1 left-1 rounded bg-white/90 p-1 text-slate-600 shadow hover:text-brand-700" aria-label={`Đặt ảnh ${i + 1} làm đại diện`} title="Đặt làm ảnh đại diện" onClick={() => onChange((cur) => [src, ...cur.filter((_, k) => k !== i)])}>
+                <Star className="size-3.5" />
+              </button>
+            )}
+            <button type="button" className="absolute top-1 right-1 rounded-full bg-white/90 p-0.5 text-red-600 shadow" aria-label={`Xóa ảnh ${i + 1}`} title="Xóa ảnh" onClick={() => onChange((cur) => cur.filter((_, k) => k !== i))}>
+              <X className="size-3.5" />
+            </button>
+          </div>
+        ))}
+        <button type="button" className="flex size-24 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 text-xs font-medium text-slate-600 hover:border-brand-600 hover:text-brand-700 disabled:opacity-60" disabled={uploading} onClick={() => input.current?.click()}>
+          {uploading ? <Loader2 className="size-5 animate-spin" /> : <Upload className="size-5" />}
+          {uploading ? 'Đang tải...' : 'Tải ảnh lên'}
+        </button>
+      </div>
+      <input ref={input} type="file" accept={IMAGE_TYPES.join(',')} multiple hidden aria-label="Chọn ảnh từ thiết bị" onChange={upload} />
+      <p className="mt-1.5 text-xs text-slate-500">JPG, PNG hoặc WebP, tối đa {MAX_IMAGE_MB} MB mỗi ảnh. Có thể chọn nhiều ảnh cùng lúc.</p>
+      <div className="mt-2 flex gap-2">
+        <input className="input py-1.5" placeholder="Hoặc dán link ảnh (https://...)" aria-label="Link ảnh" value={link} onChange={(e) => setLink(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addLink() } }} />
+        <button type="button" className="btn-outline py-1.5" disabled={!link.trim()} onClick={addLink}>Thêm</button>
+      </div>
+    </div>
+  )
+}
+
+function ProductForm({ initial, categories, isEdit, onSubmit, onCancel }: { initial: FormState; categories: Category[]; isEdit: boolean; onSubmit: (input: ProductInput) => Promise<void>; onCancel: () => void }) {
   const [f, setF] = useState<FormState>(initial)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const set = (k: keyof FormState) => (e: { target: { value: string } }) => setF({ ...f, [k]: e.target.value })
 
   const leafs = categories.filter((c) => c.parentId !== null)
@@ -83,7 +155,7 @@ function ProductForm({ initial, categories, onSubmit, onCancel }: { initial: For
         price,
         stock,
         warrantyMonths: Number(f.warrantyMonths) || 0,
-        images: lines(f.images),
+        images: f.images,
         highlights: lines(f.highlights),
         description: f.description.trim(),
         specs,
@@ -116,9 +188,10 @@ function ProductForm({ initial, categories, onSubmit, onCancel }: { initial: For
       </div>
       <div className="grid grid-cols-3 gap-2">
         <div><label className="label">Giá (đ) *</label><input className="input" type="number" min={0} value={f.price} onChange={set('price')} /></div>
-        <div><label className="label">Tồn kho *</label><input className="input" type="number" min={0} value={f.stock} onChange={set('stock')} /></div>
+        <div><label className="label">{isEdit ? 'Tồn kho' : 'Tồn kho *'}</label><input className="input" type="number" min={0} value={f.stock} onChange={set('stock')} disabled={isEdit} title={isEdit ? 'Sửa tồn kho tại trang Kho hàng' : undefined} /></div>
         <div><label className="label">BH (tháng)</label><input className="input" type="number" min={0} value={f.warrantyMonths} onChange={set('warrantyMonths')} /></div>
       </div>
+      {isEdit && <p className="-mt-2 text-xs text-slate-500 sm:col-span-2">Tồn kho không sửa ở đây (tránh ghi đè số lượng khi đang có đơn hàng). Nhập / xuất / kiểm kê tại trang <Link to="/admin/ton-kho" className="text-brand-700 hover:underline">Kho hàng</Link>.</p>}
       {attrKeys.length > 0 && (
         <div className="rounded-lg bg-surface p-3 sm:col-span-2">
           <p className="mb-2 text-xs font-semibold text-slate-600">Thuộc tính lọc (chuẩn hóa — VD: "16 GB", "Intel Core i5", "Full HD")</p>
@@ -134,12 +207,14 @@ function ProductForm({ initial, categories, onSubmit, onCancel }: { initial: For
       )}
       <div><label className="label">Thông số nổi bật (mỗi dòng 1 ý)</label><textarea className="input" rows={4} value={f.highlights} onChange={set('highlights')} /></div>
       <div><label className="label">Bảng thông số (Tên: Giá trị)</label><textarea className="input" rows={4} value={f.specs} onChange={set('specs')} placeholder={'CPU: Intel Core i5\nRAM: 16 GB'} /></div>
-      <div className="sm:col-span-2"><label className="label">Ảnh (mỗi dòng 1 URL)</label><textarea className="input" rows={2} value={f.images} onChange={set('images')} /></div>
+      <div className="sm:col-span-2">
+        <ImagePicker images={f.images} onChange={(update) => setF((cur) => ({ ...cur, images: typeof update === 'function' ? update(cur.images) : update }))} uploading={uploading} setUploading={setUploading} />
+      </div>
       <div className="sm:col-span-2"><label className="label">Mô tả</label><textarea className="input" rows={3} value={f.description} onChange={set('description')} /></div>
       <div className="sm:col-span-2"><label className="label">Lưu ý tương thích (linh kiện)</label><input className="input" value={f.compatibilityNote} onChange={set('compatibilityNote')} /></div>
       <div className="flex justify-end gap-2 sm:col-span-2">
         <button type="button" className="btn-outline" onClick={onCancel}>Hủy</button>
-        <button className="btn-primary" disabled={saving}>{saving && <Loader2 className="size-4 animate-spin" />} Lưu sản phẩm</button>
+        <button className="btn-primary" disabled={saving || uploading}>{saving && <Loader2 className="size-4 animate-spin" />} Lưu sản phẩm</button>
       </div>
     </form>
   )
@@ -151,7 +226,8 @@ export default function AdminProducts() {
   const categories = useAsync(listCategories, [])
   const [q, setQ] = useState('')
   const [catFilter, setCatFilter] = useState('')
-  const [editing, setEditing] = useState<Product | 'new' | null>(null)
+  // new: thêm mới · edit: sửa · copy: thêm mới từ sản phẩm có sẵn (nhân bản)
+  const [editing, setEditing] = useState<{ mode: 'new' | 'edit' | 'copy'; product?: Product } | null>(null)
 
   const filtered = useMemo(() => {
     const term = q.trim().toLowerCase()
@@ -176,7 +252,7 @@ export default function AdminProducts() {
 
   return (
     <>
-      <AdminPageTitle title="Quản lý sản phẩm" subtitle={`${products.data?.length ?? 0} sản phẩm đang kinh doanh`} action={<button className="btn-primary" onClick={() => setEditing('new')}><Plus className="size-4" /> Thêm sản phẩm</button>} />
+      <AdminPageTitle title="Quản lý sản phẩm" subtitle={`${products.data?.length ?? 0} sản phẩm đang kinh doanh`} action={<button className="btn-primary" onClick={() => setEditing({ mode: 'new' })}><Plus className="size-4" /> Thêm sản phẩm</button>} />
       <div className="card mb-4 flex flex-wrap gap-3 p-3">
         <div className="relative min-w-60 flex-1">
           <Search className="absolute top-3 left-3 size-4 text-slate-400" />
@@ -214,7 +290,8 @@ export default function AdminProducts() {
                   <td className="px-4 py-3 text-right text-slate-600">{p.soldCount}</td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-1">
-                      <button className="btn-ghost p-2" onClick={() => setEditing(p)} aria-label="Sửa"><Pencil className="size-4" /></button>
+                      <button className="btn-ghost p-2" onClick={() => setEditing({ mode: 'edit', product: p })} aria-label="Sửa" title="Sửa"><Pencil className="size-4" /></button>
+                      <button className="btn-ghost p-2" onClick={() => setEditing({ mode: 'copy', product: p })} aria-label="Nhân bản" title="Nhân bản thành sản phẩm mới"><Copy className="size-4" /></button>
                       <button className="btn-ghost p-2 text-red-600" onClick={() => remove(p)} aria-label="Xóa"><Trash2 className="size-4" /></button>
                     </div>
                   </td>
@@ -225,17 +302,22 @@ export default function AdminProducts() {
         </div>
       )}
 
-      <Modal open={editing !== null} wide title={editing === 'new' ? 'Thêm sản phẩm' : 'Sửa sản phẩm'} onClose={() => setEditing(null)}>
+      <Modal open={editing !== null} wide title={editing?.mode === 'edit' ? 'Sửa sản phẩm' : editing?.mode === 'copy' ? `Nhân bản từ ${editing.product?.code}` : 'Thêm sản phẩm'} onClose={() => setEditing(null)}>
         {editing !== null && (
           <ProductForm
-            key={editing === 'new' ? 'new' : editing.id}
-            initial={editing === 'new' ? empty : toForm(editing)}
+            key={`${editing.mode}-${editing.product?.id ?? 'new'}`}
+            initial={
+              !editing.product ? empty
+              : editing.mode === 'copy' ? { ...toForm(editing.product), code: '', name: `${editing.product.name} (bản sao)`, stock: '0' }
+              : toForm(editing.product)
+            }
             categories={categories.data ?? []}
+            isEdit={editing.mode === 'edit'}
             onCancel={() => setEditing(null)}
             onSubmit={async (input) => {
-              if (editing === 'new') await createProduct(input)
-              else await updateProduct(editing.id, input)
-              toast.success(editing === 'new' ? 'Đã thêm sản phẩm' : 'Đã cập nhật sản phẩm')
+              if (editing.mode === 'edit' && editing.product) await updateProduct(editing.product.id, input)
+              else await createProduct(input)
+              toast.success(editing.mode === 'edit' ? 'Đã cập nhật sản phẩm' : 'Đã thêm sản phẩm')
               setEditing(null)
               products.reload()
             }}

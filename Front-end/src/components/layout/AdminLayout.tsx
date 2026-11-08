@@ -8,8 +8,8 @@ const NAV = [
   { to: '/admin', label: 'Dashboard', icon: LayoutDashboard, end: true },
   { to: '/admin/san-pham', label: 'Sản phẩm', icon: Package },
   { to: '/admin/danh-muc', label: 'Danh mục', icon: FolderTree },
-  { to: '/admin/ton-kho', label: 'Tồn kho', icon: Boxes },
-  { to: '/admin/don-hang', label: 'Đơn hàng', icon: ClipboardList },
+  { to: '/admin/ton-kho', label: 'Kho hàng', icon: Boxes },
+  { to: '/admin/don-hang', label: 'Đơn hàng & hóa đơn', icon: ClipboardList },
   { to: '/admin/khach-hang', label: 'Khách hàng', icon: Users, advanced: true },
   { to: '/admin/khuyen-mai', label: 'Khuyến mãi', icon: TicketPercent, advanced: true },
 ]

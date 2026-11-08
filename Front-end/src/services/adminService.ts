@@ -1,25 +1,32 @@
-import type { Category, Order, OrderStatus, PaymentStatus, Product, Promotion, ShopSettings, User } from '../types'
+import type { Category, Order, OrderStatus, Paginated, PaymentStatus, Product, Promotion, ShopSettings, User } from '../types'
 import { api } from './api'
 
 /** Mọi API Admin đều yêu cầu JWT có vai trò ADMIN (RolesGuard ở NestJS kiểm tra), không chỉ ẩn nút ở giao diện. */
 
 // ================= Dashboard / thống kê =================
 
+export type DashboardDays = 7 | 30 | 90
+
 export interface DashboardData {
+  days: DashboardDays
   revenue: number
   totalOrders: number
   pendingOrders: number
   statusCounts: { status: OrderStatus; count: number }[]
   customers: number
   products: number
+  inventory: { units: number; value: number; outOfStock: number }
+  period: { revenue: number; orders: number; completedOrders: number; cancelledOrders: number; averageOrderValue: number }
   lowStock: Product[]
   recentOrders: Order[]
-  revenueLast7Days: { date: string; revenue: number }[]
+  revenueByDay: { date: string; revenue: number }[]
+  topProducts: { productId: number; code: string; name: string; image: string; stock: number; quantity: number; revenue: number }[]
+  revenueByCategory: { name: string; revenue: number }[]
 }
 
-/** GET /api/admin/dashboard — doanh thu chỉ tính đơn COMPLETED */
-export function getDashboard() {
-  return api.get<DashboardData>('/admin/dashboard')
+/** GET /api/admin/dashboard?days=7|30|90 — doanh thu chỉ tính đơn COMPLETED */
+export function getDashboard(days: DashboardDays = 7) {
+  return api.get<DashboardData>('/admin/dashboard', { days })
 }
 
 // ================= Sản phẩm =================
@@ -41,9 +48,16 @@ export function createProduct(input: ProductInput) {
   return api.post<Product>('/admin/products', input)
 }
 
-/** PUT /api/admin/products/:id */
+/** PUT /api/admin/products/:id — tồn kho bị bỏ qua (chỉ sửa qua trang Kho hàng) */
 export function updateProduct(id: number, input: ProductInput) {
   return api.put<Product>(`/admin/products/${id}`, input)
+}
+
+/** POST /api/admin/uploads — tải 1 ảnh từ thiết bị, trả về đường dẫn để lưu vào sản phẩm */
+export function uploadProductImage(file: File) {
+  const body = new FormData()
+  body.append('file', file)
+  return api.post<{ url: string }>('/admin/uploads', body)
 }
 
 /** DELETE /api/admin/products/:id — xóa mềm để không làm mất lịch sử đơn hàng */
@@ -51,9 +65,49 @@ export function deleteProduct(id: number) {
   return api.delete<{ ok: true }>(`/admin/products/${id}`)
 }
 
-/** PATCH /api/admin/inventory/:id — đặt lại số lượng tồn kho */
-export function updateStock(id: number, stock: number) {
-  return api.patch<Product>(`/admin/inventory/${id}`, { stock })
+// ================= Kho hàng =================
+
+/** PATCH /api/admin/inventory/:id — kiểm kê: đặt lại số lượng tồn kho */
+export function updateStock(id: number, stock: number, note = '') {
+  return api.patch<Product>(`/admin/inventory/${id}`, { stock, note })
+}
+
+/** POST /api/admin/inventory/:id/import — nhập thêm hàng */
+export function importStock(id: number, quantity: number, note = '') {
+  return api.post<Product>(`/admin/inventory/${id}/import`, { quantity, note })
+}
+
+/** POST /api/admin/inventory/:id/export — xuất kho (hàng lỗi, bảo hành...) */
+export function exportStock(id: number, quantity: number, note = '') {
+  return api.post<Product>(`/admin/inventory/${id}/export`, { quantity, note })
+}
+
+export type StockMovementType = 'IMPORT' | 'EXPORT' | 'ADJUST' | 'ORDER' | 'RETURN'
+
+export interface StockMovement {
+  id: number
+  type: StockMovementType
+  quantity: number
+  stockAfter: number
+  note: string
+  orderCode: string | null
+  createdAt: string
+  product: Pick<Product, 'id' | 'code' | 'name'>
+  userName: string | null
+}
+
+export interface MovementQuery {
+  productId?: number
+  type?: StockMovementType | ''
+  from?: string
+  to?: string
+  page?: number
+  pageSize?: number
+}
+
+/** GET /api/admin/inventory/movements — lịch sử nhập / xuất / bán / hoàn kho */
+export function listMovements(q: MovementQuery = {}) {
+  return api.get<Paginated<StockMovement>>('/admin/inventory/movements', { ...q })
 }
 
 // ================= Danh mục =================
@@ -84,9 +138,41 @@ export function deleteCategory(id: number) {
 
 export type AdminOrderRow = Order & { customerEmail: string }
 
-/** GET /api/admin/orders?status= */
-export function listOrders(status?: OrderStatus | '') {
-  return api.get<AdminOrderRow[]>('/admin/orders', { status })
+export interface OrderFilter {
+  status?: OrderStatus | ''
+  paymentStatus?: PaymentStatus | ''
+  from?: string
+  to?: string
+  /** Tìm theo mã đơn, tên / SĐT người nhận, email */
+  q?: string
+  page?: number
+  pageSize?: number
+}
+
+/** Tổng hợp trên TOÀN BỘ đơn khớp bộ lọc (không chỉ trang hiện tại) */
+export interface OrderSummary {
+  cancelled: number
+  validTotal: number
+  paid: number
+  unpaid: number
+  refunded: number
+}
+
+export type OrderListResult = Paginated<AdminOrderRow> & { summary: OrderSummary }
+
+/** GET /api/admin/orders?status=&paymentStatus=&from=&to=&q=&page=&pageSize= */
+export function listOrders(filter: OrderFilter = {}) {
+  return api.get<OrderListResult>('/admin/orders', { ...filter })
+}
+
+/** Lấy tất cả đơn khớp bộ lọc (gọi lần lượt từng trang 100 đơn) — dùng cho xuất CSV */
+export async function listAllOrders(filter: Omit<OrderFilter, 'page' | 'pageSize'> = {}) {
+  const all: AdminOrderRow[] = []
+  for (let page = 1; ; page++) {
+    const r = await listOrders({ ...filter, page, pageSize: 100 })
+    all.push(...r.items)
+    if (page >= r.totalPages) return all
+  }
 }
 
 /** GET /api/admin/orders/:code — kèm tồn kho hiện tại để kiểm tra */

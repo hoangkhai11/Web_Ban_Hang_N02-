@@ -1,6 +1,7 @@
 import type { CartLine, PriceQuote, Product, Promotion, ShopSettings } from '../types'
 import { api } from './api'
 
+/** Chương trình khuyến mãi kèm cờ "đang chạy" và danh sách sản phẩm áp dụng */
 export type PromotionWithProducts = Promotion & { running: boolean; products: Product[] }
 
 /** GET /api/promotions — danh sách chương trình kèm sản phẩm áp dụng */

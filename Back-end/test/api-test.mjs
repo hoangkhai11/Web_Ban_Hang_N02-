@@ -2,6 +2,7 @@
  * Kiểm thử API GICUNGCO (Giai đoạn 5) — chạy khi API đang chạy ở http://localhost:3000
  *   node test/api-test.mjs
  * Lưu ý: script tạo đơn hàng/sản phẩm thử. Chạy "npm run db:seed" để đưa dữ liệu về ban đầu.
+ * Cần dữ liệu seed mới và Back-end chạy với OTP_DEMO_MODE=true (kịch bản quên mật khẩu đọc mã từ phản hồi API).
  */
 const API = process.env.API_URL ?? 'http://localhost:3000/api';
 const results = [];
@@ -181,6 +182,113 @@ r = await call('PUT', '/admin/settings', { baseShippingFee: 35000 }, adm);
 r = await call('POST', '/promotions/quote', { items: [{ productId: 14, quantity: 1 }] });
 check('Đổi phí ship cấu hình → báo giá cập nhật', r.data.shippingFee === 35000);
 await call('PUT', '/admin/settings', { baseShippingFee: 30000 }, adm);
+
+// ---------- Tài khoản ----------
+r = await call('PATCH', '/auth/me', { fullName: 'Sinh Viên Mới', phone: '0987654322', address: '1 Nguyễn Trãi, Hà Nội' }, other);
+check('Cập nhật thông tin cá nhân', r.status === 200 && r.data.fullName === 'Sinh Viên Mới' && r.data.email === email);
+r = await call('PATCH', '/auth/me', { fullName: 'A', phone: '123', address: '' }, other);
+check('Cập nhật thông tin sai định dạng → 400', r.status === 400, r.data?.message);
+check('Sửa thông tin không token → 401', (await call('PATCH', '/auth/me', { fullName: 'Hacker', phone: '0987654322', address: '' })).status === 401);
+
+// ---------- Quên mật khẩu ----------
+r = await call('POST', '/auth/forgot-password', { identifier: 'khong-ton-tai@test.vn' });
+check('Email chưa đăng ký: phản hồi chung, không tạo mã', r.status === 200 && !r.data.devCode, r.data?.message);
+r = await call('POST', '/auth/forgot-password', { identifier: email });
+const otp = r.data.devCode;
+check('Quên mật khẩu: tạo mã OTP 6 số', r.status === 200 && /^\d{6}$/.test(otp ?? ''));
+r = await call('POST', '/auth/forgot-password', { identifier: email });
+check('Gửi lại trong 60 giây: phản hồi chung, không tạo mã mới', r.status === 200 && !r.data.devCode, r.data?.message);
+const unknown = await call('POST', '/auth/forgot-password', { identifier: 'chua-dang-ky@test.vn' });
+check('Email đã đăng ký và chưa đăng ký trả phản hồi giống nhau', unknown.status === r.status && JSON.stringify(unknown.data) === JSON.stringify(r.data));
+const wrongOtp = otp === '000000' ? '000001' : '000000';
+r = await call('POST', '/auth/reset-password', { identifier: email, code: wrongOtp, password: 'MatKhau123' });
+check('Mã OTP sai → 400', r.status === 400, r.data?.message);
+r = await call('POST', '/auth/reset-password', { identifier: email, code: otp, password: '123' });
+check('Mật khẩu mới yếu → 400', r.status === 400, r.data?.message);
+r = await call('POST', '/auth/reset-password', { identifier: email, code: otp, password: 'MatKhau123' });
+check('OTP đúng → đặt lại mật khẩu', r.status === 200);
+check('Token cũ mất hiệu lực sau khi đổi mật khẩu → 401', (await get('/auth/me', other)).status === 401);
+r = await call('POST', '/auth/reset-password', { identifier: email, code: otp, password: 'MatKhau456' });
+check('OTP đã dùng không dùng lại được → 400', r.status === 400);
+check('Mật khẩu cũ không đăng nhập được → 401', (await call('POST', '/auth/login', { email, password: 'Test1234' })).status === 401);
+check('Đăng nhập bằng mật khẩu mới', (await call('POST', '/auth/login', { email, password: 'MatKhau123' })).status === 200);
+
+// ---------- Đăng xuất & thời hạn token ----------
+const session = (await call('POST', '/auth/login', { email, password: 'MatKhau123' })).data.accessToken;
+const session2 = (await call('POST', '/auth/login', { email, password: 'MatKhau123' })).data.accessToken;
+check('Đăng xuất không token → 401', (await call('POST', '/auth/logout')).status === 401);
+check('Token dùng được trước khi đăng xuất', (await get('/auth/me', session)).status === 200);
+check('Đăng xuất thành công', (await call('POST', '/auth/logout', null, session)).status === 200);
+check('Token đã đăng xuất → 401', (await get('/auth/me', session)).status === 401);
+check('Đăng xuất thu hồi token khác của tài khoản → 401', (await get('/auth/me', session2)).status === 401);
+check('Đăng nhập lại sau khi đăng xuất', (await get('/auth/me', (await call('POST', '/auth/login', { email, password: 'MatKhau123' })).data.accessToken)).status === 200);
+const ttlHours = (token) => {
+  const { iat, exp } = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+  return (exp - iat) / 3600;
+};
+check('Token admin tối đa 24 giờ', ttlHours(adm) <= 24, `${ttlHours(adm)} giờ`);
+
+// ---------- Admin: kho hàng ----------
+const stock0 = (await get('/products/PK-MS-LOGI')).data.product.stock;
+r = await call('POST', '/admin/inventory/20/import', { quantity: 5, note: 'Nhập thử' }, adm);
+check('Nhập hàng tăng tồn kho', r.status === 201 && r.data.stock === stock0 + 5, `${stock0} -> ${r.data?.stock}`);
+r = await call('POST', '/admin/inventory/20/export', { quantity: 2, note: 'Hàng lỗi' }, adm);
+check('Xuất kho giảm tồn kho', r.status === 201 && r.data.stock === stock0 + 3);
+r = await call('POST', '/admin/inventory/20/export', { quantity: 100000 }, adm);
+check('Xuất vượt tồn → 409', r.status === 409, r.data?.message);
+r = await call('POST', '/admin/inventory/20/import', { quantity: 0 }, adm);
+check('Số lượng nhập không hợp lệ → 400', r.status === 400);
+r = await get('/admin/inventory/movements?productId=20&type=IMPORT', adm);
+check('Lịch sử kho ghi nhận lần nhập', r.status === 200 && r.data.items.some((m) => m.note === 'Nhập thử'));
+check('Khách gọi API kho → 403', (await call('POST', '/admin/inventory/20/import', { quantity: 1 }, cust)).status === 403);
+
+// ---------- Admin: thanh toán ----------
+r = await call('PATCH', `/admin/orders/${order.code}/payment`, { paymentStatus: 'REFUNDED' }, adm);
+check('Đơn đã thu → hoàn tiền', r.status === 200 && r.data.paymentStatus === 'REFUNDED');
+r = await call('PATCH', `/admin/orders/${order.code}/payment`, { paymentStatus: 'PAID' }, adm);
+check('Đã hoàn tiền không đổi lại được → 409', r.status === 409, r.data?.message);
+r = await call('PATCH', `/admin/orders/${o2.code}/payment`, { paymentStatus: 'PAID' }, adm);
+check('Đơn đã hủy không đổi thanh toán → 409', r.status === 409, r.data?.message);
+
+// ---------- Admin: khách hàng ----------
+r = await get('/admin/customers', adm);
+check('Danh sách khách có thống kê, không lộ mật khẩu', r.status === 200 && r.data.some((c) => c.email === email) && !JSON.stringify(r.data).includes('passwordHash'));
+check('Khách xem danh sách khách → 403', (await get('/admin/customers', cust)).status === 403);
+
+// ---------- Admin: tải ảnh sản phẩm ----------
+const uploadFile = async (bytes, name, type, token) => {
+  const form = new FormData();
+  form.append('file', new Blob([bytes], { type }), name);
+  const res = await fetch(API + '/admin/uploads', { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: form });
+  return { status: res.status, data: await res.json().catch(() => null) };
+};
+const pngBytes = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+r = await uploadFile(pngBytes, 'anh san pham.png', 'image/png', adm);
+check('Admin tải ảnh lên, tên file do server đặt', r.status === 201 && /^\/api\/uploads\/[0-9a-f-]{36}\.png$/.test(r.data.url), r.data?.url);
+const image = await fetch(API.replace(/\/api$/, '') + r.data.url);
+check('Ảnh đã tải xem được qua API', image.status === 200 && image.headers.get('content-type') === 'image/png');
+check('Không đăng nhập không tải ảnh được → 401', (await uploadFile(pngBytes, 'a.png', 'image/png')).status === 401);
+check('Khách không tải ảnh được → 403', (await uploadFile(pngBytes, 'a.png', 'image/png', cust)).status === 403);
+r = await uploadFile(new TextEncoder().encode('<script>alert(1)</script>'), 'gia.png', 'image/png', adm);
+check('File giả ảnh (đổi đuôi .png) → 400', r.status === 400, r.data?.message);
+r = await uploadFile(new TextEncoder().encode('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"/>'), 'x.svg', 'image/svg+xml', adm);
+check('SVG có script → 400', r.status === 400, r.data?.message);
+r = await uploadFile(new Uint8Array(5 * 1024 * 1024 + 1), 'lon.png', 'image/png', adm);
+check('Ảnh quá 5 MB → 413', r.status === 413);
+
+// ---------- Bảo mật & tài liệu ----------
+const health = await fetch(API + '/health');
+check('Header bảo mật từ helmet', health.headers.get('x-content-type-options') === 'nosniff' && !health.headers.has('x-powered-by'));
+const cors = await fetch(API + '/health', { headers: { Origin: 'https://evil.example' } });
+check('CORS không cấp quyền cho domain lạ', cors.headers.get('access-control-allow-origin') !== 'https://evil.example');
+if (process.env.NODE_ENV !== 'production') {
+  const docs = await fetch(API + '/docs-json').then((x) => x.json());
+  check('Swagger mô tả đủ nhóm API', ['/api/auth/login', '/api/orders', '/api/admin/dashboard'].every((path) => path in docs.paths), `${Object.keys(docs.paths).length} đường dẫn`);
+}
+// Giữ ở cuối: sau bước này IP bị giới hạn đăng nhập trong 1 phút
+let limited = false;
+for (let i = 0; i < 12 && !limited; i++) limited = (await call('POST', '/auth/login', { email, password: 'sai-mat-khau' })).status === 429;
+check('Đăng nhập sai liên tục → 429', limited);
 
 console.log(results.join('\n'));
 const pass = results.filter((x) => x.startsWith('PASS')).length;

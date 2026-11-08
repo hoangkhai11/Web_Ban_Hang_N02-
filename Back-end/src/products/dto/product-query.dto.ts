@@ -1,6 +1,7 @@
 import { Transform, Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
+/** Các thuộc tính được phép lọc (khớp với cột `key` của bảng product_attributes). */
 export const ATTRIBUTE_KEYS = [
   'cpu',
   'ram',
@@ -16,6 +17,7 @@ export const ATTRIBUTE_KEYS = [
 ] as const;
 export type AttributeKey = (typeof ATTRIBUTE_KEYS)[number];
 
+/** Khoảng giá lọc: [từ, dưới] (VNĐ). */
 export const PRICE_RANGES = {
   'under-5': [0, 5_000_000],
   '5-15': [5_000_000, 15_000_000],

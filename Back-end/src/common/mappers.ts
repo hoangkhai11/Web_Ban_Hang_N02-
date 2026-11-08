@@ -16,6 +16,7 @@ import type { PricingPromotion } from './pricing.js';
 
 export type ProductWithAttrs = Product & { attributes: ProductAttribute[] };
 
+/** Sản phẩm → JSON cho FE; thuộc tính lọc chuyển từ danh sách dòng sang object { key: value }. */
 export function toProductDto(p: ProductWithAttrs) {
   return {
     id: p.id,
@@ -41,8 +42,10 @@ export function toProductDto(p: ProductWithAttrs) {
 
 export type PromotionWithProducts = Promotion & { products: PromotionProduct[] };
 
+/** Date → 'YYYY-MM-DD' */
 const day = (d: Date) => d.toISOString().slice(0, 10);
 
+/** Chương trình khuyến mãi → JSON cho FE (productIds: sản phẩm áp dụng). */
 export function toPromotionDto(p: PromotionWithProducts) {
   return {
     id: p.id,
@@ -59,8 +62,10 @@ export function toPromotionDto(p: PromotionWithProducts) {
   };
 }
 
+/** Dạng rút gọn dùng cho hàm tính giá (common/pricing.ts). */
 export const toPricingPromotion = (p: PromotionWithProducts): PricingPromotion => toPromotionDto(p);
 
+/** Người dùng → JSON cho FE; KHÔNG bao giờ trả passwordHash. */
 export function toUserDto(u: User) {
   return {
     id: u.id,
@@ -75,6 +80,7 @@ export function toUserDto(u: User) {
 
 export type OrderFull = Order & { items: OrderItem[]; history: OrderStatusHistory[] };
 
+/** Đơn hàng → JSON cho FE: gom thông tin giao hàng vào `shipping`, lịch sử trạng thái sắp theo thời gian. */
 export function toOrderDto(o: OrderFull) {
   return {
     id: o.id,
@@ -113,8 +119,10 @@ export function toOrderDto(o: OrderFull) {
   };
 }
 
+/** Quan hệ cần nạp kèm khi đọc đơn hàng để dùng được toOrderDto. */
 export const orderInclude = { items: true, history: true } as const;
 
+/** Tạo slug URL: bỏ dấu tiếng Việt, đ → d, ký tự khác chữ/số thành '-'. VD: "Bàn phím" → "ban-phim" */
 export function slugify(s: string) {
   return s
     .normalize('NFD')

@@ -4,12 +4,13 @@ import { useCart } from '../../context/CartContext'
 import { usePricing } from '../../context/PricingContext'
 import { useToast } from '../../context/ToastContext'
 import { classNames, formatVND } from '../../lib/format'
+import { assetUrl } from '../../services/api'
 import type { Product } from '../../types'
 
 export function ProductImage({ src, alt, className }: { src?: string; alt: string; className?: string }) {
   return (
     <img
-      src={src || '/placeholder.svg'}
+      src={assetUrl(src) || '/placeholder.svg'}
       alt={alt}
       loading="lazy"
       className={className}

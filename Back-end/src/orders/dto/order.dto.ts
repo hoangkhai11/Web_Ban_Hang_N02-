@@ -1,10 +1,35 @@
 import { Transform, Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsOptional, IsString, Matches, MaxLength, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { PHONE_RE } from '../../auth/dto/auth.dto.js';
-import { CartItemDto } from '../../promotions/promotions.controller.js';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 
+// DTO lồng nhau phải nằm chung file: plugin Swagger sinh sai import khác file khi đường dẫn dự án có dấu tiếng Việt
+/** Số lượng tối đa mỗi sản phẩm trong 1 đơn */
+export const MAX_QTY_PER_ITEM = 10;
+
+/** 1 dòng giỏ hàng: id sản phẩm + số lượng (1–10). Dùng chung cho báo giá và tạo đơn. */
+export class CartItemDto {
+  @IsInt()
+  @Min(1)
+  productId: number;
+
+  @IsInt({ message: 'Số lượng phải là số nguyên' })
+  @Min(1, { message: 'Số lượng tối thiểu là 1' })
+  @Max(MAX_QTY_PER_ITEM, { message: `Tối đa ${MAX_QTY_PER_ITEM} sản phẩm mỗi loại` })
+  quantity: number;
+}
+
+/** Body của POST /api/promotions/quote */
+export class QuoteDto {
+  @IsArray()
+  @ArrayMaxSize(50)
+  @ValidateNested({ each: true })
+  @Type(() => CartItemDto)
+  items: CartItemDto[];
+}
+
+/** Thông tin người nhận hàng */
 export class ShippingDto {
   @Transform(trim) @IsString() @MinLength(2, { message: 'Vui lòng nhập họ tên người nhận' }) @MaxLength(100)
   fullName: string;

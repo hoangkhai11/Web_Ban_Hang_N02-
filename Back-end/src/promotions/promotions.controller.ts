@@ -1,27 +1,9 @@
 import { Body, Controller, Get, HttpCode, Post } from '@nestjs/common';
-import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsInt, Max, Min, ValidateNested } from 'class-validator';
+import { ApiTags } from '@nestjs/swagger';
+import { QuoteDto } from '../orders/dto/order.dto.js';
 import { PromotionsService } from './promotions.service.js';
 
-export class CartItemDto {
-  @IsInt()
-  @Min(1)
-  productId: number;
-
-  @IsInt({ message: 'Số lượng phải là số nguyên' })
-  @Min(1, { message: 'Số lượng tối thiểu là 1' })
-  @Max(10, { message: 'Tối đa 10 sản phẩm mỗi loại' })
-  quantity: number;
-}
-
-export class QuoteDto {
-  @IsArray()
-  @ArrayMaxSize(50)
-  @ValidateNested({ each: true })
-  @Type(() => CartItemDto)
-  items: CartItemDto[];
-}
-
+@ApiTags('Khuyến mãi')
 @Controller('promotions')
 export class PromotionsController {
   constructor(private readonly promotions: PromotionsService) {}

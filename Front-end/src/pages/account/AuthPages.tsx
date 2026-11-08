@@ -1,21 +1,29 @@
 import { Loader2 } from 'lucide-react'
 import { useState, type ChangeEvent, type FormEvent, type InputHTMLAttributes, type ReactNode } from 'react'
-import { Link, Navigate, useLocation } from 'react-router-dom'
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Logo } from '../../components/layout/Header'
 import { useAuth } from '../../context/AuthContext'
 import { useToast } from '../../context/ToastContext'
 import { classNames } from '../../lib/format'
-import { forgotPassword } from '../../services/authService'
+import { forgotPassword, resetPassword } from '../../services/authService'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const PHONE_RE = /^0\d{9}$/
 
+/** Khung trang đăng nhập / đăng ký: toàn màn hình, chỉ có logo (không header, menu, footer). */
 function AuthCard({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
   return (
-    <div className="flex min-h-[70vh] items-center justify-center bg-surface px-4 py-12">
-      <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-sm md:p-8">
-        <h1 className="text-2xl font-bold">{title}</h1>
-        {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
-        <div className="mt-6">{children}</div>
+    <div className="flex min-h-screen items-center justify-center bg-surface px-4 py-12">
+      <div className="w-full max-w-md">
+        <div className="mb-6 flex justify-center">
+          <Logo />
+        </div>
+        <div className="rounded-2xl bg-white p-6 shadow-sm md:p-8">
+          <h1 className="text-2xl font-bold">{title}</h1>
+          {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+          <div className="mt-6">{children}</div>
+        </div>
+        <Link to="/" className="mt-4 block text-center text-sm text-slate-500 hover:underline">← Về trang chủ</Link>
       </div>
     </div>
   )
@@ -77,11 +85,14 @@ export function LoginPage({ admin = false }: { admin?: boolean }) {
       <button className="btn-primary w-full py-3" disabled={loading}>
         {loading && <Loader2 className="size-4 animate-spin" />} Đăng nhập
       </button>
-      <div className="rounded-lg bg-surface p-3 text-xs text-slate-600">
-        <b>Tài khoản demo:</b>
-        <br />
-        {admin ? 'admin@gicungco.vn / Admin@123' : 'khachhang@gicungco.vn / Khach@123'}
-      </div>
+      {/* Chỉ hiện khi chạy npm run dev; bản build production không chứa thông tin này */}
+      {import.meta.env.DEV && (
+        <div className="rounded-lg bg-surface p-3 text-xs text-slate-600">
+          <b>Tài khoản demo:</b>
+          <br />
+          {admin ? 'admin@gicungco.vn / Admin@123' : 'khachhang@gicungco.vn / Khach@123'}
+        </div>
+      )}
       {!admin && (
         <p className="text-center text-sm text-slate-600">
           Chưa có tài khoản? <Link to="/dang-ky" state={location.state} className="font-semibold text-brand-700 hover:underline">Đăng ký ngay</Link>
@@ -161,39 +172,92 @@ export function RegisterPage() {
   )
 }
 
+/** Quên mật khẩu: B1 nhập email/SĐT → nhận mã 6 số; B2 nhập mã + mật khẩu mới. */
 export function ForgotPasswordPage() {
-  const [email, setEmail] = useState('')
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
+  const navigate = useNavigate()
+  const toast = useToast()
+  const [identifier, setIdentifier] = useState('')
+  const [sent, setSent] = useState<{ message: string; devCode?: string } | null>(null)
+  const [form, setForm] = useState({ code: '', password: '', confirm: '' })
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [serverError, setServerError] = useState('')
   const [loading, setLoading] = useState(false)
+  const set = (k: keyof typeof form) => (e: ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }))
 
-  const submit = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!EMAIL_RE.test(email)) return setError('Email không hợp lệ')
-    setError('')
+  const sendCode = async (e?: FormEvent) => {
+    e?.preventDefault()
+    const id = identifier.trim().toLowerCase()
+    if (!EMAIL_RE.test(id) && !PHONE_RE.test(id)) return setErrors({ identifier: 'Nhập email hoặc số điện thoại (10 số, bắt đầu bằng 0)' })
+    setErrors({})
+    setServerError('')
     setLoading(true)
-    const r = await forgotPassword(email)
-    setMessage(r.message)
-    setLoading(false)
+    try {
+      const r = await forgotPassword(id)
+      // Server không báo lần gửi có bị bỏ qua hay không; giữ mã demo đang hiển thị nếu lần này không có mã mới
+      setSent((old) => ({ ...r, devCode: r.devCode ?? old?.devCode }))
+      if (sent) toast.success('Đã ghi nhận yêu cầu. Mã mới được gửi tối đa 1 lần mỗi 60 giây')
+    } catch (err) {
+      setServerError((err as Error).message)
+    } finally {
+      setLoading(false)
+    }
   }
 
-  return (
-    <AuthCard title="Quên mật khẩu" subtitle="Nhập email đã đăng ký để nhận hướng dẫn đặt lại mật khẩu.">
-      {message ? (
-        <div className="space-y-4">
-          <p className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800">{message}</p>
-          <p className="text-xs text-slate-500">(Chế độ demo: hệ thống chưa gửi email thật.)</p>
-          <Link to="/dang-nhap" className="btn-primary w-full">Quay lại đăng nhập</Link>
-        </div>
-      ) : (
-        <form onSubmit={submit} noValidate className="space-y-4">
-          <Field id="email" label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} error={error} />
+  const submitReset = async (e: FormEvent) => {
+    e.preventDefault()
+    const errs: Record<string, string> = {}
+    if (!/^\d{6}$/.test(form.code.trim())) errs.code = 'Mã xác nhận gồm 6 chữ số'
+    if (form.password.length < 8 || !/[A-Za-z]/.test(form.password) || !/\d/.test(form.password)) errs.password = 'Mật khẩu tối thiểu 8 ký tự, gồm chữ và số'
+    if (form.confirm !== form.password) errs.confirm = 'Mật khẩu nhập lại không khớp'
+    setErrors(errs)
+    if (Object.keys(errs).length) return
+    setServerError('')
+    setLoading(true)
+    try {
+      const r = await resetPassword({ identifier: identifier.trim().toLowerCase(), code: form.code.trim(), password: form.password })
+      toast.success(r.message)
+      navigate('/dang-nhap', { replace: true })
+    } catch (err) {
+      setServerError((err as Error).message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!sent)
+    return (
+      <AuthCard title="Quên mật khẩu" subtitle="Nhập email hoặc số điện thoại đã đăng ký để nhận mã xác nhận.">
+        <form onSubmit={sendCode} noValidate className="space-y-4">
+          {serverError && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{serverError}</p>}
+          <Field id="identifier" label="Email hoặc số điện thoại" autoComplete="username" value={identifier} onChange={(e) => setIdentifier(e.target.value)} error={errors.identifier} />
           <button className="btn-primary w-full py-3" disabled={loading}>
-            {loading && <Loader2 className="size-4 animate-spin" />} Gửi hướng dẫn
+            {loading && <Loader2 className="size-4 animate-spin" />} Gửi mã xác nhận
           </button>
           <Link to="/dang-nhap" className="block text-center text-sm text-brand-700 hover:underline">Quay lại đăng nhập</Link>
         </form>
-      )}
+      </AuthCard>
+    )
+
+  return (
+    <AuthCard title="Đặt lại mật khẩu" subtitle={sent.message}>
+      <form onSubmit={submitReset} noValidate className="space-y-4">
+        {serverError && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{serverError}</p>}
+        {sent.devCode && (
+          <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">
+            Chế độ demo (chưa cấu hình gửi email/SMS): mã xác nhận là <b className="text-sm tracking-widest">{sent.devCode}</b>
+          </p>
+        )}
+        <Field id="code" label="Mã xác nhận (6 số)" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={form.code} onChange={set('code')} error={errors.code} />
+        <Field id="password" label="Mật khẩu mới" type="password" autoComplete="new-password" value={form.password} onChange={set('password')} error={errors.password} />
+        <Field id="confirm" label="Nhập lại mật khẩu mới" type="password" autoComplete="new-password" value={form.confirm} onChange={set('confirm')} error={errors.confirm} />
+        <button className="btn-primary w-full py-3" disabled={loading}>
+          {loading && <Loader2 className="size-4 animate-spin" />} Đặt lại mật khẩu
+        </button>
+        <div className="flex justify-between text-sm">
+          <button type="button" className="text-slate-500 hover:underline" onClick={() => { setSent(null); setServerError('') }}>Đổi email / SĐT</button>
+          <button type="button" className="text-brand-700 hover:underline" disabled={loading} onClick={() => sendCode()}>Gửi lại mã</button>
+        </div>
+      </form>
     </AuthCard>
   )
 }

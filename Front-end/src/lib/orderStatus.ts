@@ -41,3 +41,15 @@ export const ORDER_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 }
 
 export const ORDER_FLOW: OrderStatus[] = ['PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPING', 'COMPLETED']
+
+/** Các bước chuyển trạng thái thanh toán hợp lệ — GIỐNG Back-end (common/order-status.ts). */
+export const PAYMENT_TRANSITIONS: Record<PaymentStatus, PaymentStatus[]> = {
+  UNPAID: ['PAID'],
+  PAID: ['UNPAID', 'REFUNDED'],
+  REFUNDED: [],
+}
+
+/** Trạng thái thanh toán có thể chuyển tới; đơn đã hủy thì không đổi được nữa. */
+export function allowedPaymentStatuses(status: OrderStatus, payment: PaymentStatus): PaymentStatus[] {
+  return status === 'CANCELLED' ? [] : PAYMENT_TRANSITIONS[payment]
+}

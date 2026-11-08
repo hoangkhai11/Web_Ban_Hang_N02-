@@ -1,12 +1,11 @@
-import { Loader2, Pencil, Plus, Save, Trash2 } from 'lucide-react'
+import { Loader2, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { Modal } from '../../components/common/Misc'
 import { ErrorState, Spinner } from '../../components/common/States'
 import { AdminPageTitle } from '../../components/layout/AdminLayout'
 import { useToast } from '../../context/ToastContext'
 import { useAsync } from '../../hooks/useAsync'
-import { classNames } from '../../lib/format'
-import { createCategory, deleteCategory, listCategories, listProducts, updateCategory, updateStock, type CategoryInput } from '../../services/adminService'
+import { createCategory, deleteCategory, listCategories, updateCategory, type CategoryInput } from '../../services/adminService'
 import type { Category } from '../../types'
 
 // ======================= DANH MỤC =======================
@@ -124,82 +123,6 @@ export function AdminCategories() {
           />
         )}
       </Modal>
-    </>
-  )
-}
-
-// ======================= TỒN KHO =======================
-
-export function AdminInventory() {
-  const toast = useToast()
-  const { data, loading, error, reload } = useAsync(listProducts, [])
-  const [filter, setFilter] = useState<'all' | 'low' | 'out'>('all')
-  const [draft, setDraft] = useState<Record<number, string>>({})
-  const [saving, setSaving] = useState<number | null>(null)
-
-  if (loading) return <Spinner />
-  if (error || !data) return <ErrorState message={error ?? ''} onRetry={reload} />
-
-  const rows = data.filter((p) => (filter === 'low' ? p.stock > 0 && p.stock <= 5 : filter === 'out' ? p.stock === 0 : true))
-
-  const save = async (id: number) => {
-    const value = Number(draft[id])
-    if (!Number.isInteger(value) || value < 0) return toast.error('Tồn kho phải là số nguyên >= 0')
-    setSaving(id)
-    try {
-      await updateStock(id, value)
-      toast.success('Đã cập nhật tồn kho')
-      setDraft(({ [id]: _, ...rest }) => rest)
-      reload()
-    } catch (e) {
-      toast.error((e as Error).message)
-    } finally {
-      setSaving(null)
-    }
-  }
-
-  const tabs = [
-    { key: 'all', label: `Tất cả (${data.length})` },
-    { key: 'low', label: `Sắp hết (${data.filter((p) => p.stock > 0 && p.stock <= 5).length})` },
-    { key: 'out', label: `Hết hàng (${data.filter((p) => p.stock === 0).length})` },
-  ] as const
-
-  return (
-    <>
-      <AdminPageTitle title="Quản lý tồn kho" subtitle="Tồn kho tự động trừ khi khách đặt hàng và hoàn lại khi đơn bị hủy." />
-      <div className="mb-4 flex flex-wrap gap-2">
-        {tabs.map((t) => (
-          <button key={t.key} onClick={() => setFilter(t.key)} className={classNames('rounded-full px-4 py-1.5 text-sm font-medium', filter === t.key ? 'bg-brand-700 text-white' : 'bg-white text-slate-600')}>{t.label}</button>
-        ))}
-      </div>
-      <div className="card overflow-x-auto">
-        <table className="w-full min-w-[640px] text-sm">
-          <thead className="bg-surface text-left text-xs text-slate-500 uppercase">
-            <tr><th className="px-4 py-3">Mã</th><th className="px-4 py-3">Sản phẩm</th><th className="px-4 py-3">Trạng thái</th><th className="px-4 py-3 text-right">Tồn kho</th></tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {rows.map((p) => (
-              <tr key={p.id}>
-                <td className="px-4 py-3 font-mono text-xs">{p.code}</td>
-                <td className="px-4 py-3">{p.name}</td>
-                <td className="px-4 py-3">
-                  <span className={classNames('rounded-full px-2 py-0.5 text-xs font-semibold', p.stock === 0 ? 'bg-red-100 text-red-700' : p.stock <= 5 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800')}>
-                    {p.stock === 0 ? 'Hết hàng' : p.stock <= 5 ? 'Sắp hết' : 'Còn hàng'}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center justify-end gap-2">
-                    <input type="number" min={0} className="input w-24 py-1.5 text-right" value={draft[p.id] ?? p.stock} onChange={(e) => setDraft({ ...draft, [p.id]: e.target.value })} aria-label={`Tồn kho ${p.code}`} />
-                    <button className="btn-primary p-2" disabled={draft[p.id] === undefined || Number(draft[p.id]) === p.stock || saving === p.id} onClick={() => save(p.id)} aria-label="Lưu">
-                      {saving === p.id ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
     </>
   )
 }

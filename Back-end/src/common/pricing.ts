@@ -24,6 +24,7 @@ export interface PricingPromotion {
 
 const toDay = (d: Date | string) => (typeof d === 'string' ? d.slice(0, 10) : d.toISOString().slice(0, 10));
 
+/** Chương trình đang bật và hôm nay nằm trong khoảng [ngày bắt đầu, hết ngày kết thúc]. */
 export function isPromotionRunning(p: PricingPromotion, now = new Date()) {
   if (!p.isActive) return false;
   const start = new Date(toDay(p.startDate) + 'T00:00:00');
@@ -31,6 +32,7 @@ export function isPromotionRunning(p: PricingPromotion, now = new Date()) {
   return now >= start && now <= end;
 }
 
+/** % giảm của sản phẩm (0 nếu không thuộc chương trình giảm giá nào đang chạy). */
 export function getDiscountPercent(product: PricingProduct, promotions: PricingPromotion[]) {
   const promo = promotions.find(
     (p) => p.type === 'PRODUCT_PERCENT' && isPromotionRunning(p) && p.productIds.includes(product.id),
@@ -38,10 +40,12 @@ export function getDiscountPercent(product: PricingProduct, promotions: PricingP
   return promo ? promo.value : 0;
 }
 
+/** Đơn giá sau giảm, làm tròn tới đồng. */
 export function getUnitPrice(product: PricingProduct, promotions: PricingPromotion[]) {
   return Math.round((product.price * (100 - getDiscountPercent(product, promotions))) / 100);
 }
 
+/** Chương trình miễn phí vận chuyển đang chạy (nếu có). */
 export function getFreeShippingPromotion(promotions: PricingPromotion[]) {
   return promotions.find((p) => p.type === 'FREE_SHIPPING' && isPromotionRunning(p)) ?? null;
 }
@@ -55,6 +59,10 @@ export interface QuoteLine<P extends PricingProduct> {
   lineTotal: number;
 }
 
+/**
+ * Tính tiền giỏ hàng: từng dòng (giá gốc, giá sau giảm, thành tiền), tạm tính, tổng giảm,
+ * phí vận chuyển và tổng thanh toán. Sản phẩm không có trong `products` bị bỏ qua.
+ */
 export function quote<P extends PricingProduct>(
   cart: { productId: number; quantity: number }[],
   products: P[],

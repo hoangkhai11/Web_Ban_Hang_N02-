@@ -1,8 +1,10 @@
 import { Body, Controller, Get, HttpCode, Module, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
+import { ApiTags } from '@nestjs/swagger';
 import { ArrayMaxSize, IsArray, IsInt } from 'class-validator';
 import { ProductQueryDto } from './dto/product-query.dto.js';
 import { ProductsService } from './products.service.js';
 
+/** Body của POST /api/products/by-ids: tối đa 100 id sản phẩm */
 class ByIdsDto {
   @IsArray()
   @ArrayMaxSize(100)
@@ -10,6 +12,7 @@ class ByIdsDto {
   ids: number[];
 }
 
+@ApiTags('Sản phẩm')
 @Controller('products')
 export class ProductsController {
   constructor(private readonly products: ProductsService) {}

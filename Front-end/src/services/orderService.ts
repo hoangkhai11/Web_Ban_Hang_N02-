@@ -1,6 +1,7 @@
 import type { CartLine, Order, ShippingInfo } from '../types'
 import { api } from './api'
 
+/** Dữ liệu đặt hàng từ trang thanh toán */
 export interface CreateOrderInput {
   items: CartLine[]
   shipping: ShippingInfo

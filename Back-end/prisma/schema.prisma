@@ -40,6 +40,15 @@ enum PromotionType {
   FREE_SHIPPING
 }
 
+/// Loại biến động kho: nhập hàng, xuất (hỏng/bảo hành...), điều chỉnh kiểm kê, bán theo đơn, hoàn do hủy đơn.
+enum StockMovementType {
+  IMPORT
+  EXPORT
+  ADJUST
+  ORDER
+  RETURN
+}
+
 /// Danh mục 2 cấp (LAB 6). parentId = null là danh mục cấp 1.
 model Category {
   id          Int        @id @default(autoincrement())
@@ -80,6 +89,7 @@ model Product {
   attributes        ProductAttribute[]
   orderItems        OrderItem[]
   promotions        PromotionProduct[]
+  stockMovements    StockMovement[]
 
   @@index([categoryId])
   @@index([brand])
@@ -100,17 +110,39 @@ model ProductAttribute {
 
 /// Khách hàng & quản trị viên (LAB 4 — Customers). Mật khẩu chỉ lưu dạng băm bcrypt.
 model User {
-  id           Int      @id @default(autoincrement())
-  fullName     String   @map("full_name") @db.VarChar(100)
-  email        String   @unique @db.VarChar(150)
-  phone        String   @db.VarChar(20)
-  passwordHash String   @map("password_hash") @db.VarChar(255)
-  address      String   @default("") @db.VarChar(255)
-  role         Role     @default(CUSTOMER)
-  createdAt    DateTime @default(now()) @map("created_at")
-  orders       Order[]
+  id                Int             @id @default(autoincrement())
+  fullName          String          @map("full_name") @db.VarChar(100)
+  email             String          @unique @db.VarChar(150)
+  phone             String          @db.VarChar(20)
+  passwordHash      String          @map("password_hash") @db.VarChar(255)
+  address           String          @default("") @db.VarChar(255)
+  role              Role            @default(CUSTOMER)
+  /// Lần đổi / đặt lại mật khẩu gần nhất — JWT phát hành trước thời điểm này bị từ chối
+  passwordChangedAt DateTime?       @map("password_changed_at")
+  /// Tăng khi đăng xuất — JWT mang số cũ bị từ chối
+  tokenVersion      Int             @default(0) @map("token_version")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  orders            Order[]
+  stockMovements    StockMovement[]
+  passwordResets    PasswordReset[]
 
   @@map("users")
+}
+
+/// Mã OTP đặt lại mật khẩu (chỉ lưu bản băm), gửi qua email hoặc SMS.
+model PasswordReset {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel   String    @db.VarChar(10)
+  codeHash  String    @map("code_hash") @db.VarChar(255)
+  attempts  Int       @default(0)
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("password_resets")
 }
 
 /// Đơn hàng (LAB 4 — Orders). Trạng thái đơn và trạng thái thanh toán được tách riêng.
@@ -200,6 +232,25 @@ model PromotionProduct {
 
   @@id([promotionId, productId])
   @@map("promotion_products")
+}
+
+/// Lịch sử kho — mỗi lần tồn kho thay đổi đều ghi 1 dòng (quantity âm = giảm).
+model StockMovement {
+  id         Int               @id @default(autoincrement())
+  productId  Int               @map("product_id")
+  product    Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  type       StockMovementType
+  quantity   Int
+  stockAfter Int               @map("stock_after")
+  note       String            @default("") @db.VarChar(500)
+  orderCode  String?           @map("order_code") @db.VarChar(20)
+  userId     Int?              @map("user_id")
+  user       User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt  DateTime          @default(now()) @map("created_at")
+
+  @@index([productId, createdAt])
+  @@index([createdAt])
+  @@map("stock_movements")
 }
 
 /// Cấu hình cửa hàng dạng key-value (VD: base_shipping_fee).

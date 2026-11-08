@@ -1,11 +1,15 @@
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsEmail, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
 
+/** Cắt khoảng trắng đầu/cuối */
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
+/** Cắt khoảng trắng + chuyển chữ thường (dùng cho email) */
 const lower = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim().toLowerCase() : value);
 
+/** SĐT Việt Nam: 10 chữ số, bắt đầu bằng 0 */
 export const PHONE_RE = /^0\d{9}$/;
 
+/** POST /api/auth/register */
 export class RegisterDto {
   @Transform(trim)
   @IsString()
@@ -29,6 +33,7 @@ export class RegisterDto {
   password: string;
 }
 
+/** POST /api/auth/login */
 export class LoginDto {
   @Transform(lower)
   @IsEmail({}, { message: 'Email không hợp lệ' })
@@ -44,6 +49,7 @@ export class LoginDto {
   admin?: boolean;
 }
 
+/** PATCH /api/auth/me */
 export class UpdateProfileDto {
   @Transform(trim)
   @IsString()
@@ -61,8 +67,23 @@ export class UpdateProfileDto {
   address: string;
 }
 
+/** identifier: email hoặc số điện thoại đã đăng ký */
 export class ForgotPasswordDto {
   @Transform(lower)
-  @IsEmail({}, { message: 'Email không hợp lệ' })
-  email: string;
+  @IsString()
+  @Matches(/^([^\s@]+@[^\s@]+\.[^\s@]+|0\d{9})$/, { message: 'Nhập email hoặc số điện thoại đã đăng ký' })
+  identifier: string;
+}
+
+/** POST /api/auth/reset-password: email/SĐT + mã OTP + mật khẩu mới */
+export class ResetPasswordDto extends ForgotPasswordDto {
+  @Transform(trim)
+  @Matches(/^\d{6}$/, { message: 'Mã xác nhận gồm 6 chữ số' })
+  code: string;
+
+  @IsString()
+  @MinLength(8, { message: 'Mật khẩu tối thiểu 8 ký tự' })
+  @MaxLength(72)
+  @Matches(/^(?=.*[A-Za-z])(?=.*\d)/, { message: 'Mật khẩu phải gồm chữ và số' })
+  password: string;
 }
